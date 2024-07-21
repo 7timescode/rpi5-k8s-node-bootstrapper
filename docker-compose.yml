@@ -1,0 +1,13 @@
+version: "3.9"
+
+services:
+    node-bootstrapper:
+        privileged: true
+        build: .
+        # volumes:
+            # Mount ipython & bash history to files in the local filesystem so that
+            # they persist between container restarts.
+            # - ${PWD}/.ipython_data_local:/root/.ipython/profile_default/
+            # - ${PWD}/.bash_history:/root/.bash_history
+
+            # - .:/app/node-bootstrapper
