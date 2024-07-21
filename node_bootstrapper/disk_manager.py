@@ -3,9 +3,12 @@ import subprocess
 from pathlib import Path
 
 import typer
+from rich import box
 from rich.console import Console
+from rich.panel import Panel
 from rich.progress import Progress
 from rich.prompt import Confirm, IntPrompt, Prompt
+from rich.text import Text
 
 app = typer.Typer()
 # TODO: use https://rich.readthedocs.io/en/stable/logging.html#logging-handler
@@ -20,21 +23,38 @@ def run_command(command: str, debug: bool = False):
     prints a success message in green; if it fails, prints the error in red and exits.
     If debug is True, prints the output of the command.
     """
-    if debug:
-        console.print(f"Running: {command}", style="bold")
+    console.print(f"Running: {command}", style="bold")
     result = subprocess.run(command, shell=True, capture_output=True, text=True)
-    if debug:
-        if result.returncode == 0:
-            console.print(" -- [green]Command succeeded![/green]")
+
+    if debug or result.returncode != 0:
         if result.stdout:
-            console.print(f" -- [yellow]Output:[/yellow] {result.stdout}")
+            console.print(
+                Panel(
+                    result.stdout,
+                    title_align="left",
+                    title=Text("stdout", style="green"),
+                    expand=False,
+                    box=box.ROUNDED,
+                )
+            )
         if result.stderr:
-            console.print(f" -- [red]Error:[/red] {result.stderr}")
-    else:
-        if result.returncode != 0:
-            console.print(f"[red]Command failed with error:[/red] {result.stderr}")
-            console.print(f"[yellow]Output:[/yellow] {result.stdout}")
-            raise typer.Abort()
+            console.print(
+                Panel(
+                    result.stderr,
+                    title_align="left",
+                    title=Text("stderr", style="red"),
+                    expand=False,
+                    box=box.ROUNDED,
+                )
+            )
+        if not result.stdout and not result.stderr:
+            title = (
+                "[green]Command succeeded[/green]"
+                if result.returncode == 0
+                else "[red]Command failed[/red]"
+            )
+            console.print(title)
+
     return result
 
 
@@ -62,13 +82,14 @@ def erase_device(device: str, debug: bool):
     """
     Prompts the user for confirmation and erases all partitions on the given device.
     """
-    if typer.confirm(f"Are you sure you want to erase all partitions on {device}?"):
+    if Confirm.ask(
+        f"[yellow]Are you sure you want to erase all partitions on {device}?[/yellow]"
+    ):
         console.print(f"[yellow]Erasing all partitions on {device}...[/yellow]")
         run_command(f"parted {device} --script mklabel msdos", debug)
         refresh_device_state(device, debug)
     else:
-        console.print("[red]Operation cancelled.[/red]")
-        raise typer.Abort()
+        raise typer.Abort("Operation cancelled.")
 
 
 def copy_image_with_progress(image_path: str, device: str, debug: bool):
@@ -100,6 +121,39 @@ def refresh_device_state(device: str, debug: bool = False):
     run_command(f"partprobe {device}", debug)
 
 
+def get_partition_info(device: str, debug: bool = False):
+
+    result = run_command(f"parted {device} -ms unit s print", debug)
+    lines = result.stdout.splitlines()
+
+    # Find the start and end sectors of the second partition
+    partition_info = {}
+    total_sectors = None
+    for line in lines:
+        if "BYT" in line:
+            continue
+        if f"{device}" in line:
+            total_sectors = int(line.split(":")[1].replace("s", ""))
+            continue
+
+        index, start, end, length, filesystem = line.split(":")[:5]
+        partition_info[index] = {
+            "start": int(start.replace("s", "")),
+            "end": int(end.replace("s", "")),
+            "length": int(length.replace("s", "")),
+            "filesystem": filesystem,
+        }
+
+    return total_sectors, partition_info
+
+
+def align_sector(sector, alignment=2048):
+    """
+    Aligns the given sector to the nearest alignment boundary.
+    """
+    return ((sector + alignment - 1) // alignment) * alignment
+
+
 @app.command()
 def manage_disk(
     device: str,
@@ -118,13 +172,9 @@ def manage_disk(
     Manages the disk by partitioning it, writing a preinstalled image, and setting up
     additional partitions. Prompts for input if not provided via command-line options.
     """
-    import ipdb
-
-    ipdb.set_trace()
-    # additional_size_gb = None
     refresh_device_state(device, debug)
 
-    disk_capacity_gb = get_disk_capacity(device)
+    disk_capacity_gb = get_disk_capacity(device, debug)
     suggested_system_capacity = int(max(disk_capacity_gb / 3, 100))
 
     console.print(f"[green bold]Using device: {device}[/green bold]")
@@ -141,7 +191,7 @@ def manage_disk(
     path = Path(image_path)
     if path.exists() and path.is_file():
         if not path.suffix == ".img":
-            if not Confirm(
+            if not Confirm.ask(
                 f"[yellow]File {str(path)} does not appear to be an .img file. Are you sure?[/yellow]"
             ):
                 raise typer.Abort()
@@ -166,8 +216,8 @@ def manage_disk(
         raise typer.Abort()
 
     if system_size > disk_capacity_gb / 2:
-        if not Confirm(
-            f"[yellow]The system size might be too large (({system_size}GB) / {disk_capacity_gb}GB total). Are you sure?[/yellow]"
+        if not Confirm.ask(  # TODO: This doesn't work
+            f"[yellow]The system size might be too large ({system_size}GB / {disk_capacity_gb}GB total). Are you sure?[/yellow]"
         ):
             raise typer.Abort()
 
@@ -176,10 +226,9 @@ def manage_disk(
         if force:
             erase_device(device, debug)
         else:
-            console.print(
-                f"[red]The device {device} is not empty. Use --force to erase all partitions.[/red]"
+            raise typer.Abort(
+                f"The device {device} is not empty. Use --force to erase all partitions."
             )
-            raise typer.Abort()
 
     # Copy the image to the device with a progress bar
     copy_image_with_progress(image_path, device, debug)
@@ -192,89 +241,97 @@ def manage_disk(
     result = run_command(f"fdisk -l {device}", debug)
     if "Disklabel type: dos" in result.stdout:
         console.print("[green]Detected DOS partition table.[/green]")
-        system_partition = f"{device}1"
-        additional_partition = f"{device}2"
+        # boot_partition = f"{device}1"
+        system_partition = f"{device}2"
+        additional_partition = f"{device}3"
     else:
-        console.print("[green]Detected GPT partition table.[/green]")
-        system_partition = f"{device}p1"
-        additional_partition = f"{device}p2"
+        # TODO: what to do here?
+        typer.Abort("Partition table is not DOS. Will not continue.")
 
     # Verify that the copied partition is valid and fix it if necessary
     console.print("[green]Checking and resizing the system partition...[/green]")
-    run_command(f"partprobe {device}", debug)
+
+    # TODO: This fails (non existent device)
     run_command(f"e2fsck -f -y {system_partition} || true", debug)
-    # run_command(f"resize2fs {system_partition} {system_size}", debug)
+
+    total_sectors, partition_info = get_partition_info(device, debug)
+    if not partition_info.get("2"):
+        console.print("[red]Could not get 2nd partition info[/red]")
+        raise typer.Abort()
+
+    # Align the end sector for the system partition
+    system_size_sectors = (
+        system_size * 1024 * 1024 * 1024 // 512
+    )  # Convert GB to sectors
+    system_partition_new_end = align_sector(
+        partition_info["2"]["start"] + system_size_sectors
+    )
+
+    # # Calculate the end sector for the resized second partition
+    # system_partition_new_end = partition_info['2']['start'] + system_size_sectors - 1  # Correctly calculate the end sector
+
+    # Align the end sector to the nearest multiple of 2048
+    # if system_partition_new_end % 2048 != 0:
+    #     system_partition_new_end += 2048 - (system_partition_new_end % 2048)
 
     # Resize the partition
-    run_command(f"parted {device} --script resizepart 2 {system_size}GB", debug)
-    console.print("[green]Checking resized partition...[/green]")
+    run_command(
+        f"parted {device} --script resizepart 2 {system_partition_new_end}s", debug
+    )
+    console.print("[green]Checking filesystem on resized partition...[/green]")
+
+    # TODO: This might not be empty first time around (or even the second one)
     run_command(f"e2fsck -f -y {system_partition} || true", debug)
 
     # Create the additional partition
     console.print(
         "[green]Creating additional partition in the remaining space...[/green]"
     )
-    run_command(f"parted {device} --script mkpart primary {system_size}GB 100%", debug)
+
+    # Create the additional partition using the end sector of the second partition
+    console.print(
+        "[green]Creating additional partition in the remaining space...[/green]"
+    )
+
+    # Calculate the end sector for the additional partition
+    # additional_partition_start = system_partition_new_end + 1
+    additional_partition_end = total_sectors - 1  # Use all remaining sectors
+    if additional_partition_end % 2048 != 0:
+        additional_partition_end -= additional_partition_end % 2048
+    additional_partition_start = align_sector(system_partition_new_end + 1)
+    # additional_partition_end = align_sector(total_sectors - 1)
+
+    # additional_partition_start = int(partition_info["2"]) + 1
+    run_command(
+        f"parted {device} --script mkpart primary {additional_partition_start}s {additional_partition_end}s",
+        debug,
+    )
 
     # Format the new partition
     console.print("[green]Formatting the new partition...[/green]")
     run_command(f"mkfs.ext4 {additional_partition}", debug)
 
+    console.print("[green]Checking filesystem on additional partition...[/green]")
+    run_command(f"e2fsck -f -y {additional_partition} || true", debug)
+
     # Mount the new partition
-    uuid = (
-        subprocess.check_output(
-            f"blkid -s UUID -o value {additional_partition}", shell=True
-        )
-        .decode()
-        .strip()
-    )
-    run_command("mkdir -p /mnt/data", debug)
-    run_command(
-        f"echo 'UUID={uuid} /mnt/data ext4 defaults 0 2' | tee -a /etc/fstab", debug
-    )
-    run_command(f"mount {additional_partition} /mnt/data", debug)
+    # uuid = (
+    #     subprocess.check_output(
+    #         f"blkid -s UUID -o value {additional_partition}", shell=True
+    #     )
+    #     .decode()
+    #     .strip()
+    # )
+    # run_command("mkdir -p /mnt/data", debug)
+    # run_command(
+    #     f"echo 'UUID={uuid} /mnt/data ext4 defaults 0 2' | tee -a /etc/fstab", debug
+    # )
+    # run_command(f"mount {additional_partition} /mnt/data", debug)
 
     console.print("[green]Disk management complete.[/green]")
 
-    # # List of commands to run
-    # commands_to_run = [
-    #     # Update package lists
-    #     # "apt-get update",
-    #     # Install parted and e2fsprogs tools
-    #     # "apt-get install -y parted e2fsprogs",
-    #     # Write the image to the device
-    #     f"dd if={image_path} of={device} bs=4M status=progress",
-    #     # Ensure all data is written to the device
-    #     "sync",
-    #     # Check and repair the filesystem on the second partition
-    #     f"e2fsck -f {device}",
-    #     # Resize the filesystem on the second partition
-    #     f"resize2fs {device}p2 {system_size}",
-    #     # Resize the second partition
-    #     f"parted {device} --script resizepart 2 {system_size}",
-    #     # Create a new partition in the remaining space
-    #     f"parted {device} --script mkpart primary {system_size} 100%",
-    #     # Inform the OS of partition table changes
-    #     f"partprobe {device}",
-    #     # Format the new partition with ext4 filesystem
-    #     f"mkfs.ext4 {device}p3",
-    #     # # Get the UUID of the new partition
-    #     # "UUID=$(blkid -s UUID -o value /dev/mmcblk0p3)",
-    #     # Create a mount point for the new partition
-    #     # "mkdir -p /mnt/data",
-    #     # # Add the new partition to /etc/fstab
-    #     # "echo 'UUID=$UUID /mnt/data ext4 defaults 0 2' >> /etc/fstab",
-    #     # # Mount the new partition
-    #     # "mount /dev/{device}p3 /mnt/data"
-    # ]
     # # TODO: configure cloud-init
     # # We'll need to mount the partitions probably to do that (maybe not the 3rd one, but still).
-    # import ipdb; ipdb.set_trace()
-
-    # # Execute each command inside the Docker container
-    # for cmd in commands_to_run:
-    #     # docker_exec_command = f"docker exec -it node-bootstrapper bash -c \"{cmd}\""
-    #     run_command(cmd, debug)
 
 
 if __name__ == "__main__":
