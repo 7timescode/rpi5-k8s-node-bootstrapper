@@ -1,0 +1,13 @@
+[config_generator]
+hostname_string="rpi{num}-ubuntupi"
+remote_admin_acc_ssh_key=None
+remote_admin_acc_username=admin
+local_admin_acc_username=local
+local_admin_acc_password=pass
+wifi_ssid=WIFI
+wifi_password=pass
+gateway=192.168.1.1
+eth_network=192.168.1.128/26
+wifi_network=192.168.4.192/26
+
+[disk_manager]
