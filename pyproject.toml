@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "rpi-k8s-node-bootstrapper"
+name = "rpi5-k8s-node-bootstrapper"
 version = "0.1.0"
 description = "A set of utilities to bootstrap Raspberry Pi 5s as k8s nodes"
 authors = ["Sergios <sergios@7timescode.com>"]
