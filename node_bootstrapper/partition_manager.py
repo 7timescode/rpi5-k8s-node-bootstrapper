@@ -268,6 +268,7 @@ def manage_partitions(
         f"parted {device} --script mkpart primary {additional_partition_start}s {additional_partition_end}s",
         debug,
     )
+    refresh_device_state(device, debug)
 
     # Format the new partition
     console.print("Formatting the new partition...", style=success_style)
