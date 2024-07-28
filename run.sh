@@ -1,80 +1,42 @@
 #!/bin/bash
 
-# Check if the device argument is provided
-if [ "$1" != "--help" ] && [ -z "$1" ]; then
-  echo "Error: No device provided."
-  echo "Usage: $0 <device> [--system-size <size>] [--image-path <path>] [--force] [--debug] [--help]"
+# Function to display usage message
+show_usage() {
+  echo "Usage: $0 {config_generator|partition_manager} <device>/--help"
+  echo "Example: $0 config_generator /dev/sda"
+  echo "Script help: $0 config_generator --help"
   exit 1
+}
+
+# Check if the correct number of arguments is provided
+if [ "$#" -lt 2 ]; then
+  echo "Error: Incorrect arguments."
+  show_usage
 fi
 
-# Check if --help argument is provided
-if [ "$1" == "--help" ]; then
-  # Run the Docker container with the help command
-  docker run --privileged -it --rm \
-    --volume $(pwd):/app/node-bootstrapper \
-    --entrypoint python \
-    node-bootstrapper \
-    node_bootstrapper/disk_manager.py --help
-  exit 0
+# Check if the first argument is either config_generator or partition_manager
+if [ "$1" != "config_generator" ] && [ "$1" != "partition_manager" ]; then
+  echo "Error: Invalid script name provided."
+  show_usage
 fi
 
-
-# Get the device from the first argument
-device=$1
+script_to_run="$1"
 shift
 
-# Initialize variables for optional arguments
-system_size=""
-image_path=""
-force=""
-debug=""
-help=""
+run_segment="docker run --privileged -it --rm --volume $(pwd):/app/node-bootstrapper"
+entrypoint_segment="--entrypoint python node-bootstrapper node_bootstrapper/$script_to_run.py"
 
-# Parse the optional arguments
-while [[ "$#" -gt 0 ]]; do
-  case $1 in
-    --system-size)
-      system_size=$2
-      shift
-      ;;
-    --image-path)
-      image_path=$2
-      shift
-      ;;
-    --force)
-      force="--force"
-      ;;
-    --debug)
-      debug="--debug"
-      ;;
-    --help)
-      help="--help"
-      ;;
-     *)
-      echo "Unknown parameter passed: $1"
-      exit 1
-      ;;
-  esac
-  shift
-done
+# If a device is provided, it needs to be added as a `--device` argument.
+# But if the second (first after shift) argument is "--help", it can't be passed to `--device`.
+if [ "$1" != "--help" ]; then
+  device_argument="--device $1:$1"
+else
+  device_argument=""
+fi
 
-# Run the Docker container with the selected device
-docker_command=" docker run --privileged -it --rm --device ${device}:${device} --volume $(pwd):/app/node-bootstrapper --entrypoint python node-bootstrapper node_bootstrapper/disk_manager.py ${device}"
-
-# Special case for `--help`
-# If not `--help`, parse all other arguments
-if [ -n "$system_size" ]; then
-  docker_command="${docker_command} --system-size ${system_size}"
-fi
-if [ -n "$image_path" ]; then
-  docker_command="${docker_command} --image-path ${image_path}"
-fi
-if [ -n "$force" ]; then
-  docker_command="${docker_command} ${force}"
-fi
-if [ -n "$debug" ]; then
-  docker_command="${docker_command} ${debug}"
-fi
+# Combine all parts of the command
+run_command="$run_segment $device_argument $entrypoint_segment $@"
+echo $run_command
 
 # Run the Docker container with the constructed command
-eval $docker_command
+eval $run_command
