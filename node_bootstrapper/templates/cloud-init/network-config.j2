@@ -1,0 +1,37 @@
+# This file contains a netplan-compatible configuration which cloud-init
+# will apply on first-boot. Please refer to the cloud-init documentation and
+# the netplan reference for full details:
+#
+# https://cloudinit.readthedocs.io/
+# https://netplan.io/reference
+
+network:
+  version: 2
+  {% if setup_eth -%}
+  ethernets:
+    eth0:
+      dhcp4: false
+      nameservers:
+        addresses: [{{gateway}}, 8.8.8.8, 8.8.4.4]
+      addresses:
+        - {{eth_address}}/24
+      routes:
+        - to: default
+          via: {{gateway}}
+  {%- endif %}
+  {% if setup_wifi -%}
+  wifis:
+    wlan0:
+      dhcp4: false
+      addresses: [{{wifi_address}}/24]
+      nameservers:
+        addresses: [{{gateway}}, 8.8.8.8, 8.8.4.4]
+      access-points:
+        "{{wifi_ssid}}":
+          password: "{{wifi_password}}"
+      {% if not setup_eth -%}
+      routes:
+        - to: default
+          via: {{gateway}}
+      {%- endif %}
+  {%- endif %}

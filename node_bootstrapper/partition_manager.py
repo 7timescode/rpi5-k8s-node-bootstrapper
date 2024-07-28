@@ -2,60 +2,23 @@ import os
 import subprocess
 from pathlib import Path
 
+import rich
 import typer
-from rich import box
-from rich.console import Console
-from rich.panel import Panel
 from rich.progress import Progress
 from rich.prompt import Confirm, IntPrompt, Prompt
-from rich.text import Text
 
-app = typer.Typer()
-# TODO: use https://rich.readthedocs.io/en/stable/logging.html#logging-handler
-console = Console()
+from node_bootstrapper.utils import (
+    error_style,
+    refresh_device_state,
+    run_command,
+    success_style,
+    warning_style,
+)
+
+app = typer.Typer(no_args_is_help=True)
+console = rich.console.Console()
 
 MIN_SYSTEM_SIZE = 20  # Minimum recommended system partition size in GB
-
-
-def run_command(command: str, debug: bool = False):
-    """
-    Runs a shell command and prints the command in gray. If the command succeeds,
-    prints a success message in green; if it fails, prints the error in red and exits.
-    If debug is True, prints the output of the command.
-    """
-    console.print(f"Running: {command}", style="bold")
-    result = subprocess.run(command, shell=True, capture_output=True, text=True)
-
-    if debug or result.returncode != 0:
-        if result.stdout:
-            console.print(
-                Panel(
-                    result.stdout,
-                    title_align="left",
-                    title=Text("stdout", style="green"),
-                    expand=False,
-                    box=box.ROUNDED,
-                )
-            )
-        if result.stderr:
-            console.print(
-                Panel(
-                    result.stderr,
-                    title_align="left",
-                    title=Text("stderr", style="red"),
-                    expand=False,
-                    box=box.ROUNDED,
-                )
-            )
-        if not result.stdout and not result.stderr:
-            title = (
-                "[green]Command succeeded[/green]"
-                if result.returncode == 0
-                else "[red]Command failed[/red]"
-            )
-            console.print(title)
-
-    return result
 
 
 def check_device_empty(device: str, debug: bool = False) -> bool:
@@ -83,13 +46,17 @@ def erase_device(device: str, debug: bool):
     Prompts the user for confirmation and erases all partitions on the given device.
     """
     if Confirm.ask(
-        f"[yellow]Are you sure you want to erase all partitions on {device}?[/yellow]"
+        rich.text.Text(
+            f"Are you sure you want to erase all partitions on {device}?",
+            style=warning_style,
+        ),
     ):
-        console.print(f"[yellow]Erasing all partitions on {device}...[/yellow]")
+        console.print(f"Erasing all partitions on {device}...", style=warning_style)
         run_command(f"parted {device} --script mklabel msdos", debug)
         refresh_device_state(device, debug)
     else:
-        raise typer.Abort("Operation cancelled.")
+        console.print("Operation cancelled.", style=error_style)
+        raise typer.Abort()
 
 
 def copy_image_with_progress(image_path: str, device: str, debug: bool):
@@ -114,11 +81,6 @@ def copy_image_with_progress(image_path: str, device: str, debug: bool):
                     progress.update(task, completed=bytes_copied)
         proc.wait()
     refresh_device_state(device, debug)
-
-
-def refresh_device_state(device: str, debug: bool = False):
-    console.print("[green]Refreshing the state of the device...[/green]")
-    run_command(f"partprobe {device}", debug)
 
 
 def get_partition_info(device: str, debug: bool = False):
@@ -155,7 +117,7 @@ def align_sector(sector, alignment=2048):
 
 
 @app.command()
-def manage_disk(
+def manage_partitions(
     device: str,
     system_size: str = typer.Option(
         None, help="Size for the system partition (e.g., 128G)."
@@ -177,10 +139,10 @@ def manage_disk(
     disk_capacity_gb = get_disk_capacity(device, debug)
     suggested_system_capacity = int(max(disk_capacity_gb / 3, 100))
 
-    console.print(f"[green bold]Using device: {device}[/green bold]")
+    console.print(f"Using device: {device} ({disk_capacity_gb}GB)", style=success_style)
     if system_size is None:
         system_size = IntPrompt.ask(
-            "Enter the size for the system partition (in GB)",
+            "Enter the size for the system partition in GB",
             default=suggested_system_capacity,
         )
 
@@ -192,32 +154,41 @@ def manage_disk(
     if path.exists() and path.is_file():
         if not path.suffix == ".img":
             if not Confirm.ask(
-                f"[yellow]File {str(path)} does not appear to be an .img file. Are you sure?[/yellow]"
+                rich.text.Text(
+                    f"File {str(path)} does not appear to be an .img file. Are you sure?",
+                    style=warning_style,
+                )
             ):
                 raise typer.Abort()
     else:
         console.print(
-            f"[red]Path {str(path)} does not exist. Please enter a valid .img file path.[/red]"
+            f"Path {str(path)} does not exist. Please enter a valid .img file path.",
+            style=error_style,
         )
         raise typer.Abort()
 
     # Check if the system partition size is within recommended limits
     if system_size < MIN_SYSTEM_SIZE:
         console.print(
-            f"[red]The system partition size should be at least {MIN_SYSTEM_SIZE}GB.[/red]"
+            f"The system partition size should be at least {MIN_SYSTEM_SIZE}GB.",
+            style=error_style,
         )
         raise typer.Abort()
 
     # Check if the total size exceeds the disk capacity
     if system_size > disk_capacity_gb:
         console.print(
-            f"[red]The system size ({system_size}GB) exceeds the disk capacity ({disk_capacity_gb}GB).[/red]"
+            f"The system size ({system_size}GB) exceeds the disk capacity ({disk_capacity_gb}GB).",
+            style=error_style,
         )
         raise typer.Abort()
 
     if system_size > disk_capacity_gb / 2:
         if not Confirm.ask(  # TODO: This doesn't work
-            f"[yellow]The system size might be too large ({system_size}GB / {disk_capacity_gb}GB total). Are you sure?[/yellow]"
+            rich.text.Text(
+                f"The system size might be too large ({system_size}GB / {disk_capacity_gb}GB total). Are you sure?",
+                style=warning_style,
+            )
         ):
             raise typer.Abort()
 
@@ -226,112 +197,86 @@ def manage_disk(
         if force:
             erase_device(device, debug)
         else:
-            raise typer.Abort(
-                f"The device {device} is not empty. Use --force to erase all partitions."
+            console.print(
+                f"The device {device} is not empty. Use --force to erase all partitions.",
+                style=error_style,
             )
+            raise typer.Abort()
 
     # Copy the image to the device with a progress bar
     copy_image_with_progress(image_path, device, debug)
 
     # Wait for the device to be recognized
-    console.print("[green]Waiting for the device to be recognized...[/green]")
+    console.print("Waiting for the device to be recognized...", style=success_style)
     subprocess.run("sleep 5", shell=True)
 
     # Check the partition table type
     result = run_command(f"fdisk -l {device}", debug)
     if "Disklabel type: dos" in result.stdout:
-        console.print("[green]Detected DOS partition table.[/green]")
+        console.print("Detected DOS partition table.", style=success_style)
         # boot_partition = f"{device}1"
         system_partition = f"{device}2"
         additional_partition = f"{device}3"
     else:
-        # TODO: what to do here?
-        typer.Abort("Partition table is not DOS. Will not continue.")
+        console.print(
+            "Partition table is not DOS. Will not continue.", style=error_style
+        )
+        raise typer.Abort()
 
     # Verify that the copied partition is valid and fix it if necessary
-    console.print("[green]Checking and resizing the system partition...[/green]")
+    console.print("Checking and resizing the system partition...", style=success_style)
 
-    # TODO: This fails (non existent device)
     run_command(f"e2fsck -f -y {system_partition} || true", debug)
 
     total_sectors, partition_info = get_partition_info(device, debug)
     if not partition_info.get("2"):
-        console.print("[red]Could not get 2nd partition info[/red]")
+        console.print("Could not get 2nd partition info.", style=error_style)
         raise typer.Abort()
 
     # Align the end sector for the system partition
-    system_size_sectors = (
-        system_size * 1024 * 1024 * 1024 // 512
-    )  # Convert GB to sectors
+    system_size_sectors = system_size * 1024 * 1024 * 1024 // 512
+    # Convert GB to sectors
     system_partition_new_end = align_sector(
         partition_info["2"]["start"] + system_size_sectors
     )
-
-    # # Calculate the end sector for the resized second partition
-    # system_partition_new_end = partition_info['2']['start'] + system_size_sectors - 1  # Correctly calculate the end sector
-
-    # Align the end sector to the nearest multiple of 2048
-    # if system_partition_new_end % 2048 != 0:
-    #     system_partition_new_end += 2048 - (system_partition_new_end % 2048)
 
     # Resize the partition
     run_command(
         f"parted {device} --script resizepart 2 {system_partition_new_end}s", debug
     )
-    console.print("[green]Checking filesystem on resized partition...[/green]")
+    console.print("Checking filesystem on resized partition...", style=success_style)
 
-    # TODO: This might not be empty first time around (or even the second one)
     run_command(f"e2fsck -f -y {system_partition} || true", debug)
 
     # Create the additional partition
     console.print(
-        "[green]Creating additional partition in the remaining space...[/green]"
+        "Creating additional partition in the remaining space...", style=success_style
     )
 
     # Create the additional partition using the end sector of the second partition
     console.print(
-        "[green]Creating additional partition in the remaining space...[/green]"
+        "Creating additional partition in the remaining space...", style=success_style
     )
 
     # Calculate the end sector for the additional partition
-    # additional_partition_start = system_partition_new_end + 1
     additional_partition_end = total_sectors - 1  # Use all remaining sectors
     if additional_partition_end % 2048 != 0:
         additional_partition_end -= additional_partition_end % 2048
     additional_partition_start = align_sector(system_partition_new_end + 1)
-    # additional_partition_end = align_sector(total_sectors - 1)
 
-    # additional_partition_start = int(partition_info["2"]) + 1
     run_command(
         f"parted {device} --script mkpart primary {additional_partition_start}s {additional_partition_end}s",
         debug,
     )
 
     # Format the new partition
-    console.print("[green]Formatting the new partition...[/green]")
+    console.print("Formatting the new partition...", style=success_style)
     run_command(f"mkfs.ext4 {additional_partition}", debug)
 
-    console.print("[green]Checking filesystem on additional partition...[/green]")
+    console.print("Checking filesystem on additional partition...", style=success_style)
     run_command(f"e2fsck -f -y {additional_partition} || true", debug)
 
-    # Mount the new partition
-    # uuid = (
-    #     subprocess.check_output(
-    #         f"blkid -s UUID -o value {additional_partition}", shell=True
-    #     )
-    #     .decode()
-    #     .strip()
-    # )
-    # run_command("mkdir -p /mnt/data", debug)
-    # run_command(
-    #     f"echo 'UUID={uuid} /mnt/data ext4 defaults 0 2' | tee -a /etc/fstab", debug
-    # )
-    # run_command(f"mount {additional_partition} /mnt/data", debug)
-
-    console.print("[green]Disk management complete.[/green]")
-
-    # # TODO: configure cloud-init
-    # # We'll need to mount the partitions probably to do that (maybe not the 3rd one, but still).
+    console.print("Disk management complete.", style=success_style)
 
 
 if __name__ == "__main__":

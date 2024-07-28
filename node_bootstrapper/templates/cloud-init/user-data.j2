@@ -1,0 +1,83 @@
+#cloud-config
+hostname: {{hostname}}
+fqdn: {{hostname}}.local
+
+# This disables Check-date for apt, which could raise issues since the RPi doesn't have an RTC
+apt:
+  conf: |
+    Acquire {
+      Check-Date "false";
+    };
+
+bootcmd:
+  # Disable swap (required for k8s)
+  - swapoff -a
+  - sed -i '/ swap / s/^/#/' /etc/fstab
+
+# ssh_pwauth: false
+
+users:
+- name: {{remote_admin_acc_username}}
+  groups: users,adm,dialout,audio,netdev,video,plugdev,cdrom,games,input,gpio,spi,i2c,render,sudo
+  shell: /bin/bash
+  lock_passwd: true
+  ssh_authorized_keys:
+    - {{remote_admin_acc_ssh_key}}
+  sudo: ALL=(ALL) NOPASSWD:ALL
+
+- name: {{local_admin_acc_username}}
+  groups: users,adm,dialout,audio,netdev,video,plugdev,cdrom,games,input,gpio,spi,i2c,render,sudo
+  shell: /bin/bash
+  lock_passwd: false
+  passwd: {{local_admin_acc_password}}
+  sudo: ALL=(ALL) NOPASSWD:ALL
+
+packages:
+  - python3-pip
+  - git
+  - apt-transport-https
+  - curl
+  - avahi-daemon
+  # Probably not required, only in the Ansible host
+  - python3-jmespath
+
+timezone: Europe/Athens
+runcmd:
+# Disable access via ssh for local_user
+- echo "DenyUsers {{local_admin_acc_username}}" >> /etc/ssh/sshd_config
+- systemctl restart sshd
+
+# Set locales
+- sudo locale-gen en_US.UTF-8
+- sudo update-locale LANG=en_US.UTF-8
+- setupcon -k --force || true
+
+# Upgrade to fetch the latest packages (and probably kernel version).
+- sudo apt update && sudo apt upgrade -y
+
+# Useful for in-node temperature information & stress tests etc.
+- sudo apt install s-tui stress -y
+
+# Longhorn dependencies
+- sudo apt get install nfs-common -y
+- sudo apt install linux-modules-extra-raspi
+
+# Automatically load the `iscsi_tcp` module
+- echo "iscsi_tcp" | sudo tee -a /etc/modules-load.d/modules.conf
+
+# Setup avahi for multicast DNS
+- sudo systemctl start avahi-daemon
+- sudo systemctl enable avahi-daemon
+
+# Find the UUID of the 3rd partition (the data partition) and add it to fstab
+# so that it's automatically mounted on reboots.
+- |
+  UUID=$(blkid -s UUID -o value /dev/sda3 || blkid -s UUID -o value /dev/nvme0n1p3)
+  if [ -n "$UUID" ]; then
+    mkdir -p /mnt/data
+    grep -q "UUID=$UUID" /etc/fstab || echo "UUID=$UUID /mnt/data ext4 defaults,nofail 0 2" | sudo tee -a /etc/fstab
+    sudo mount -a
+  fi
+
+# Done with everything, reboot now
+- sudo reboot now
