@@ -164,3 +164,10 @@ cython_debug/
 # Images
 *.img
 *.iso
+
+# Anything that's an output
+*/output/*
+output/*
+config.ini
+config.ini.sample2
+notes.md
