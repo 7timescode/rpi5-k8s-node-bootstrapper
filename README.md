@@ -2,7 +2,7 @@
 
 
 <p align="center">
-  <img src="logo.jpg" alt="drawing" width="200"/>
+  <img src="docs/logo.jpg" alt="drawing" width="200"/>
 </p>
 
 
@@ -73,3 +73,7 @@ Then, you can run things like the following:
 # This will do the same, but will generate ethernet configuration and think this is the 6th host, so it'll name it as rpi06-ubuntupi.local. You can change the name pattern in the config file.
 ./run.sh config_generator /dev/sdb --no-setup-wifi --setup-eth --debug --hosts-number 1 --force --offset 5
 ```
+
+Here's a partial execution screenshot
+
+![screenshot](docs/screenshot.png "A partial execution screenshot")
