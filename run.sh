@@ -24,7 +24,7 @@ script_to_run="$1"
 shift
 
 run_segment="docker run --privileged -it --rm --volume $(pwd):/app/node-bootstrapper"
-entrypoint_segment="--entrypoint python node-bootstrapper node_bootstrapper/$script_to_run.py"
+entrypoint_segment="--entrypoint python sergafts/rpi5-k8s-node-bootstrapper:latest node_bootstrapper/$script_to_run.py"
 
 # If a device is provided, it needs to be added as a `--device` argument.
 # But if the second (first after shift) argument is "--help", it can't be passed to `--device`.
