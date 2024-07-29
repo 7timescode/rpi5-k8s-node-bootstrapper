@@ -44,4 +44,4 @@ dtoverlay=dwc2,dr_mode=host
 
 [all]
 dtparam=pciex1
-dtparam=pciex1_gen3
+dtparam=pciex1_gen=3
