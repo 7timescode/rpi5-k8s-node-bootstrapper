@@ -9,7 +9,7 @@
 A collection of scripts to help bootstrap Raspberry Pi 5s as k8s nodes.
 
 ## Motivation
-When provisioning my Raspberry Pi 5s as k8s nodes, I had to do a fair amount of back and forth when figuring out what to include or not.
+When provisioning my Raspberry Pi 5s as Kubernetes nodes, I had to do a fair amount of back and forth when figuring out what to include or not.
 This is what I came up with, hopefully it might be useful for someone.
 
 ### Why not use Raspberry Pi Imager?
