@@ -197,16 +197,6 @@ def cloud_init_config(
             run_command(
                 f"cp {TEMPLATE_PATH / "config.txt"} /mnt/data/config.txt", debug
             )
-            if Confirm.ask(
-                rich.text.Text(
-                    "Want to append nvme dtparams to /boot/firmware/config.txt ?",
-                    style=warning_style,
-                )
-            ):
-                run_command("echo 'dtparam=pciex1' >> /mnt/data/firmware/config.txt")
-                run_command(
-                    "echo 'dtparam=pciex1_gen=3' >> /mnt/data/firmware/config.txt"
-                )
 
             console.print(
                 f"Unmounting partition {partition_to_use}", style=success_style
