@@ -27,7 +27,7 @@ def check_device_empty(device: str, debug: bool = False) -> bool:
     otherwise returns False.
     """
     refresh_device_state(device, debug)
-    result = run_command(f"lsblk {device}", debug=debug)
+    result = run_command(f"lsblk {device}", debug)
     return len(result.stdout.splitlines()) <= 2
 
 
@@ -35,7 +35,7 @@ def get_disk_capacity(device: str, debug: bool = False) -> int:
     """
     Gets the capacity of the specified disk in GB.
     """
-    result = run_command(f"lsblk -b -d -o SIZE -n {device}", debug=debug)
+    result = run_command(f"lsblk -b -d -o SIZE -n {device}", debug)
     size_bytes = int(result.stdout.strip())
     size_gb = size_bytes / (1024**3)
     return size_gb
@@ -51,7 +51,7 @@ def erase_device(device: str, debug: bool):
             style=warning_style,
         ),
     ):
-        console.print(f"Erasing all partitions on {device}...", style=warning_style)
+        console.print(f"Erasing all partitions on {device}.", style=warning_style)
         run_command(f"parted {device} --script mklabel msdos", debug)
         refresh_device_state(device, debug)
     else:
@@ -71,7 +71,7 @@ def copy_image_with_progress(image_path: str, device: str, debug: bool):
     with subprocess.Popen(
         command, shell=True, stderr=subprocess.PIPE, bufsize=1, text=True
     ) as proc, Progress(console=console) as progress:
-        task = progress.add_task("Copying image...", total=image_size)
+        task = progress.add_task("Copying image.", total=image_size)
         for line in proc.stderr:
             # Extract the amount of data copied so far
             if "bytes" in line:
@@ -207,8 +207,8 @@ def manage_partitions(
     copy_image_with_progress(image_path, device, debug)
 
     # Wait for the device to be recognized
-    console.print("Waiting for the device to be recognized...", style=success_style)
-    subprocess.run("sleep 5", shell=True)
+    console.print("Waiting for the device to be recognized.", style=success_style)
+    run_command("sleep 5", debug)
 
     # Check the partition table type
     result = run_command(f"fdisk -l {device}", debug)
@@ -224,7 +224,7 @@ def manage_partitions(
         raise typer.Abort()
 
     # Verify that the copied partition is valid and fix it if necessary
-    console.print("Checking and resizing the system partition...", style=success_style)
+    console.print("Checking and resizing the system partition.", style=success_style)
 
     run_command(f"e2fsck -f -y {system_partition} || true", debug)
 
@@ -244,18 +244,13 @@ def manage_partitions(
     run_command(
         f"parted {device} --script resizepart 2 {system_partition_new_end}s", debug
     )
-    console.print("Checking filesystem on resized partition...", style=success_style)
+    console.print("Checking filesystem on resized partition.", style=success_style)
 
     run_command(f"e2fsck -f -y {system_partition} || true", debug)
 
-    # Create the additional partition
-    console.print(
-        "Creating additional partition in the remaining space...", style=success_style
-    )
-
     # Create the additional partition using the end sector of the second partition
     console.print(
-        "Creating additional partition in the remaining space...", style=success_style
+        "Creating additional partition in the remaining space.", style=success_style
     )
 
     # Calculate the end sector for the additional partition
@@ -270,11 +265,15 @@ def manage_partitions(
     )
     refresh_device_state(device, debug)
 
+    # Wait for the device to be recognized
+    console.print("Waiting for the device to be recognized.", style=success_style)
+    run_command("sleep 5", debug)
+
     # Format the new partition
-    console.print("Formatting the new partition...", style=success_style)
+    console.print("Formatting the new partition.", style=success_style)
     run_command(f"mkfs.ext4 {additional_partition}", debug)
 
-    console.print("Checking filesystem on additional partition...", style=success_style)
+    console.print("Checking filesystem on additional partition.", style=success_style)
     run_command(f"e2fsck -f -y {additional_partition} || true", debug)
 
     console.print("Disk management complete.", style=success_style)
