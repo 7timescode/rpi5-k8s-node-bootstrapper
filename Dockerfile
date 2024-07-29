@@ -1,5 +1,7 @@
 FROM python:3.12-slim
 
+ARG APP_ENV=production
+
 # Install necessary tools
 RUN apt-get update && apt-get install -y \
     parted \
@@ -30,12 +32,3 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
 ENTRYPOINT [ "/bin/bash" ]
-
-# Set the working directory
-# WORKDIR /root
-#
-# # Copy the script to the container
-# COPY resize_and_format.sh /usr/local/bin/resize_and_format.sh
-# RUN chmod +x /usr/local/bin/resize_and_format.sh
-#
-# ENTRYPOINT ["bash"]
