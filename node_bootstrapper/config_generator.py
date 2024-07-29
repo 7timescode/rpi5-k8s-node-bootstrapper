@@ -121,11 +121,12 @@ def cloud_init_config(
         user_data_file_path = host_dir / "user-data"
         with open(user_data_file_path, "w") as user_data_file:
             user_data_file.write(user_data_content)
-            console.print(
-                get_panel(
-                    text=user_data_content, title="user-data", border_style="white"
+            if debug:
+                console.print(
+                    get_panel(
+                        text=user_data_content, title="user-data", border_style="white"
+                    )
                 )
-            )
 
         network_config_template = jinja_environment.get_template("network-config.j2")
 
@@ -147,13 +148,14 @@ def cloud_init_config(
         network_config_file_path = host_dir / "network-config"
         with open(network_config_file_path, "w") as network_config_file:
             network_config_file.write(network_config_content)
-            console.print(
-                get_panel(
-                    text=network_config_content,
-                    title="network-config",
-                    border_style="white",
+            if debug:
+                console.print(
+                    get_panel(
+                        text=network_config_content,
+                        title="network-config",
+                        border_style="white",
+                    )
                 )
-            )
 
         console.print(
             "Finished generating cloud-init configuration.", style=success_style
