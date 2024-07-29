@@ -6,7 +6,7 @@
 </p>
 
 
-A collection of scripts to help bootstrap Raspberry Pi 5s as k8s nodes.
+A collection of scripts to help bootstrap Raspberry Pi 5s as Kubernetes nodes.
 
 ## Motivation
 When provisioning my Raspberry Pi 5s as Kubernetes nodes, I had to do a fair amount of back and forth when figuring out what to include or not.
