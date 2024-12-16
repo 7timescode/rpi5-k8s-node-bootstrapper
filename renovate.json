@@ -3,21 +3,31 @@
   "extends": [
     "config:recommended"
   ],
-  "schedule": ["every weekend"],
+  "schedule": [
+    "every weekend"
+  ],
   "packageRules": [
     {
-      "matchUpdateTypes": ["minor", "patch"],
+      "matchCategories": [
+        "python"
+      ],
+      "enabled": true
+    },
+    {
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "matchCurrentVersion": "!/^0/",
       "automerge": false
     },
     {
-      "matchManagers": ["poetry"],
+      "matchManagers": [
+        "poetry"
+      ],
       "groupName": "python dependencies"
     }
   ],
-  "python": {
-    "enabled": true
-  },
   "poetry": {
     "enabled": true
   },
